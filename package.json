@@ -1,0 +1,9 @@
+{
+  "name": "agendador-ethos",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "deploy:worker": "npm run deploy -w apps/worker",
+    "deploy:painel": "npm run deploy -w apps/painel"
+  }
+}

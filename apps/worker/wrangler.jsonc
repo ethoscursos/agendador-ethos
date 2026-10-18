@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "agendador-ethos-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-18",
+
+  "d1_databases": [
+    {
+      "binding": "AGENDADOR_DB",
+      "database_name": "agendador-ethos-d1",
+      "database_id": "<preencher após wrangler d1 create>",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "kv_namespaces": [
+    { "binding": "CONVERSA_KV", "id": "<preencher após kv namespace create>" },
+    { "binding": "LEMBRETE_KV", "id": "<preencher após kv namespace create>" }
+  ],
+
+  "queues": {
+    "producers": [
+      { "binding": "FILA_MENSAGENS", "queue": "envio-mensagens" }
+    ],
+    "consumers": [
+      { "queue": "envio-mensagens", "max_batch_size": 5, "max_retries": 3 }
+    ]
+  },
+
+  "triggers": {
+    "crons": ["*/5 * * * *"]
+  },
+
+  "ai": { "binding": "AI" },
+
+  "vars": {
+    "FUSO": "America/Sao_Paulo",
+    "TIMEOUT_MINUTOS": 10,
+    "ANTECEDENCIA_MINUTOS": 0,
+    "EVOLUTION_API_URL": "http://<ip-do-vps>:8080"
+  },
+
+  "routes": [
+    { "pattern": "agendador.ethoscursos.com.br/api/*", "zone_name": "ethoscursos.com.br" },
+    { "pattern": "agendador.ethoscursos.com.br/webhook/*", "zone_name": "ethoscursos.com.br" }
+  ]
+}

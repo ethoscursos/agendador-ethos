@@ -1,0 +1,40 @@
+# ===== Dependências =====
+node_modules/
+
+# ===== Builds e saídas =====
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# ===== Cloudflare / Wrangler =====
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# ===== Variáveis de ambiente e segredos =====
+.env
+.env.*
+!.env.example
+
+# ===== Cobertura de testes =====
+coverage/
+
+# ===== Logs =====
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ===== Ambiente / editores =====
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# ===== Bancos locais =====
+*.sqlite
+*.db
