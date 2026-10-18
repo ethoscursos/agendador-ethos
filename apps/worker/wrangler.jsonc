@@ -23,25 +23,11 @@
       { "binding": "FILA_MENSAGENS", "queue": "envio-mensagens" }
     ],
     "consumers": [
-      { "queue": "envio-mensagens", "max_batch_size": 5, "max_retries": 3 }
+      { "queue": "envio-mensagens", "max_batch_size": 10, "max_retries": 3 }
     ]
   },
 
   "triggers": {
-    "crons": ["*/5 * * * *"]
-  },
-
-  "ai": { "binding": "AI" },
-
-  "vars": {
-    "FUSO": "America/Sao_Paulo",
-    "TIMEOUT_MINUTOS": 10,
-    "ANTECEDENCIA_MINUTOS": 0,
-    "EVOLUTION_API_URL": "http://<ip-do-vps>:8080"
-  },
-
-  "routes": [
-    { "pattern": "agendador.ethoscursos.com.br/api/*", "zone_name": "ethoscursos.com.br" },
-    { "pattern": "agendador.ethoscursos.com.br/webhook/*", "zone_name": "ethoscursos.com.br" }
-  ]
+    "crons": ["0 8 * * *"]
+  }
 }
