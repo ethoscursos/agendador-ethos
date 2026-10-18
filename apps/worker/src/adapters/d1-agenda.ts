@@ -4,11 +4,13 @@
 
 import type {
   AgendaPort,
+  LembreteDoDia,
   AgendamentoDoPainel,
   Cliente,
   HorarioAtendimento,
   Servico,
 } from '../ports/agenda';
+
 
 export class D1AgendaAdapter implements AgendaPort {
   constructor(private db: D1Database) {}
@@ -57,38 +59,40 @@ export class D1AgendaAdapter implements AgendaPort {
   }
 
   // Q4 — criar agendamento com checagem de conflito (atômico)
-  async criarAgendamento(dados: {
-    profissionalId: number;
-    clienteId: number;
-    servicoId: number;
-    inicio: string;
-    fim: string;
-    criadoEm: string;
-  }): Promise<boolean> {
-    const { meta } = await this.db
-      .prepare(
-        `INSERT INTO agendamento (profissional_id, cliente_id, servico_id, data_hora_inicio, data_hora_fim, status, criado_em)
-         SELECT ?, ?, ?, ?, ?, 'confirmado', ?
-         WHERE NOT EXISTS (
-           SELECT 1 FROM agendamento
-           WHERE profissional_id = ? AND status = 'confirmado'
-             AND data_hora_inicio < ? AND data_hora_fim > ?
-         )`
-      )
-      .bind(
-        dados.profissionalId,
-        dados.clienteId,
-        dados.servicoId,
-        dados.inicio,
-        dados.fim,
-        dados.criadoEm,
-        dados.profissionalId,
-        dados.fim,
-        dados.inicio
-      )
-      .run();
-    return (meta.changes ?? 0) > 0;
-  }
+// Retorna o id do agendamento criado, ou null se o slot foi ocupado (conflito).
+async criarAgendamento(dados: {
+  profissionalId: number;
+  clienteId: number;
+  servicoId: number;
+  inicio: string;
+  fim: string;
+  criadoEm: string;
+}): Promise<number | null> {
+  const { meta } = await this.db
+    .prepare(
+      `INSERT INTO agendamento (profissional_id, cliente_id, servico_id, data_hora_inicio, data_hora_fim, status, criado_em)
+       SELECT ?, ?, ?, ?, ?, 'confirmado', ?
+       WHERE NOT EXISTS (
+         SELECT 1 FROM agendamento
+         WHERE profissional_id = ? AND status = 'confirmado'
+           AND data_hora_inicio < ? AND data_hora_fim > ?
+       )`
+    )
+    .bind(
+      dados.profissionalId,
+      dados.clienteId,
+      dados.servicoId,
+      dados.inicio,
+      dados.fim,
+      dados.criadoEm,
+      dados.profissionalId,
+      dados.fim,
+      dados.inicio
+    )
+    .run();
+  if ((meta.changes ?? 0) === 0) return null; // conflito — slot ocupado
+  return meta.last_row_id ?? null;
+}
 
   // Q5 — listar agendamentos do dia (painel)
   async listarAgendamentosDoDia(

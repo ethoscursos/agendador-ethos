@@ -67,13 +67,13 @@ export interface AgendaPort {
   verificarConflito(profissionalId: number, inicio: string, fim: string): Promise<number>;
   // Q4 — criar agendamento com checagem de conflito (atômico)
   criarAgendamento(dados: {
-    profissionalId: number;
-    clienteId: number;
-    servicoId: number;
-    inicio: string;
-    fim: string;
-    criadoEm: string;
-  }): Promise<boolean>;
+  profissionalId: number;
+  clienteId: number;
+  servicoId: number;
+  inicio: string;
+  fim: string;
+  criadoEm: string;
+}): Promise<number | null>; // id criado, ou null se houve conflito
   // Q5 — listar agendamentos do dia (painel)
   listarAgendamentosDoDia(
     profissionalId: number,
