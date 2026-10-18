@@ -52,6 +52,8 @@ export interface AgendamentoDoPainel {
   duracaoMinutos: number;
 }
 
+export interface LembreteDoDia { id: number; profissionalId: number; clienteTelefone: string; clienteNome: string; servicoNome: string; dataHoraInicio: string; }
+
 export interface AgendaPort {
   // Q1 — horários de atendimento do dia
   listarHorariosDoDia(profissionalId: number, diaSemana: number): Promise<HorarioAtendimento[]>;
@@ -89,4 +91,5 @@ export interface AgendaPort {
   buscarOuCriarCliente(nome: string, telefone: string, criadoEm: string): Promise<Cliente>;
   listarServicosAtivos(profissionalId: number): Promise<Servico[]>;
   obterServico(profissionalId: number, servicoId: number): Promise<Servico | null>;
+listarLembretesDoDia(profissionalId: number, inicioDoDia: string, inicioProximoDia: string): Promise<LembreteDoDia[]>;
 }

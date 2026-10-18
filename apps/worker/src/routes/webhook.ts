@@ -69,9 +69,44 @@ export function webhookRoutes(env: Env): Hono {
       await mensageiro.enviarTexto({ para: telefoneCliente, texto: resposta });
     }
 
-    // 6. Ações de escrita (Q4 criar agendamento, lembrete) — TODO (Etapa 7):
-    // quando resultado.acao === 'criar_agendamento', chamar agenda.criarAgendamento
-    // e agendar o lembrete 24h.
+    // ... dentro do handler do webhook, após salvar o estado ...
+
+// 6. Ações de escrita — quando a máquina decidiu criar o agendamento
+if (resultado.acao === 'criar_agendamento' && resultado.dadosAgendamento) {
+  const { servicoId, inicio, fim } = resultado.dadosAgendamento;
+  // TODO (contrato WhatsApp): obter o nome do cliente do payload da Evolution
+  const nomeCliente = String(payload.nome_cliente ?? 'Cliente');
+
+  const cliente = await agenda.buscarOuCriarCliente(
+    nomeCliente,
+    telefoneCliente,
+    new Date().toISOString()
+  );
+
+  const criado = await agenda.criarAgendamento({
+    profissionalId,
+    clienteId: cliente.id,
+    servicoId,
+    inicio,
+    fim,
+    criadoEm: new Date().toISOString(),
+  });
+
+  if (criado) {
+    // Agendar lembrete 24h (dedup no LEMBRETE_KV)
+    const lembretes = new KvLembreteAdapter(env.LEMBRETE_KV);
+    await lembretes.agendar(0, inicio); // TODO: obter o id do agendamento criado
+    await mensageiro.enviarTexto({
+      para: telefoneCliente,
+      texto: 'Agendamento confirmado! ✅ Enviamos o resumo.',
+    });
+  } else {
+    await mensageiro.enviarTexto({
+      para: telefoneCliente,
+      texto: 'Infelizmente esse horário acabou de ser ocupado. Escolha outro, por favor.',
+    });
+  }
+}
 
     return c.json({ ok: true });
   });

@@ -5,21 +5,37 @@
 
 import type { Env } from '../env';
 import { inicioDoDiaUtc, inicioProximoDiaUtc } from '../domain/fuso';
+import { D1AgendaAdapter } from '../adapters/d1-agenda';
 import { KvLembreteAdapter } from '../adapters/kv-lembrete';
 import { QueueMensageiroAdapter } from '../adapters/queue-mensageiro';
 
 export async function processarCron(env: Env): Promise<void> {
   const agora = new Date();
-  const diaAtual = agora.toISOString().slice(0, 10);
-  // Dia seguinte no fuso (aproximação: +1 dia em UTC — o fuso exato entra no adaptador)
   const proximo = new Date(agora.getTime() + 24 * 60 * 60 * 1000);
   const diaAlvo = proximo.toISOString().slice(0, 10);
 
   const inicio = inicioDoDiaUtc(diaAlvo, env.FUSO);
   const fim = inicioProximoDiaUtc(diaAlvo, env.FUSO);
 
-  // TODO (Etapa 7): query dedicada de lembretes — agendamentos confirmados
-  // do dia alvo com cliente e serviço (JOIN cliente + servico).
-  // Por ora, o cron apenas registra a janela processada.
-  console.log('cron lembretes', { diaAtual, diaAlvo, inicio, fim });
+  const agenda = new D1AgendaAdapter(env.AGENDADOR_DB);
+  const lembretes = new KvLembreteAdapter(env.LEMBRETE_KV);
+  const mensageiro = new QueueMensageiroAdapter(env.FILA_MENSAGENS);
+
+  // Buscar todos os profissionais com agendamentos no dia alvo
+  // (por ora, itera por profissionalId — a query de "todos os profissionais"
+  // pode ser adicionada ao port se necessário; no MVP assume-se 1 profissional)
+  const profissionalId = 1; // TODO (multi-tenant): iterar pelos profissionais ativos
+  const agendamentos = await agenda.listarLembretesDoDia(profissionalId, inicio, fim);
+
+  for (const agendamento of agendamentos) {
+    if (await lembretes.jaEnviado(agendamento.id)) continue; // dedup
+
+    const horario = agendamento.dataHoraInicio.slice(11, 16);
+    await mensageiro.enviarTexto({
+      para: agendamento.clienteTelefone,
+      texto: `Olá, ${agendamento.clienteNome}! 👋 Lembrete: seu ${agendamento.servicoNome} é amanhã às ${horario}.`,
+    });
+
+    await lembretes.marcarEnviado(agendamento.id);
+  }
 }
