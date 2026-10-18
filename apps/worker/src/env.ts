@@ -10,4 +10,5 @@ export interface Env {
   TIMEOUT_MINUTOS: string;
   ANTECEDENCIA_MINUTOS: string;
   EVOLUTION_API_URL: string;
+  SEGREDO_SESSAO: string;
 }
