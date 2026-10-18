@@ -1,11 +1,18 @@
-// domain/maquina-estados.ts
-// Máquina de estados determinística da conversa (Seção 10 do RDA v18).
-// TypeScript PURO — depende apenas de ports (interfaces), nunca da Cloudflare.
+// domain/maquina-estados.ts (atualizado — Etapa 4)
+// A máquina continua TypeScript PURO: chama apenas os ports (interfaces).
+// As escritas (Q4, lembrete, mensagens) são executadas pelo orquestrador (webhook handler).
 
 import type { Conversa, EstadoConversa, Intencao } from './tipos';
 import type { AgendaPort } from '../ports/agenda';
 import type { RegrasAgendamento } from './regras';
 import { slotsLivres } from './slots';
+import { resolverDia } from './dias';
+
+export interface ContextoExecucao {
+  profissionalId: number;
+  telefoneCliente: string;
+  nomeCliente?: string;
+}
 
 export type EventoConversa =
   | { tipo: 'mensagem'; texto: string; intencao: Intencao }
@@ -17,69 +24,103 @@ export interface ResultadoProcessamento {
   contexto: Conversa['contexto'];
   respostas: string[];
   acao?: 'criar_agendamento' | 'agendar_lembrete' | 'limpar_conversa';
-  dadosAgendamento?: { servicoId: number; dia: string; horario: string };
+  dadosAgendamento?: {
+    profissionalId: number;
+    servicoId: number;
+    inicio: string;
+    fim: string;
+  };
 }
 
 export class MaquinaEstados {
   constructor(
     private agenda: AgendaPort,
-    private regras: RegrasAgendamento
+    private regras: RegrasAgendamento,
+    private fuso: string
   ) {}
 
-  async processar(conversa: Conversa, evento: EventoConversa): Promise<ResultadoProcessamento> {
+  async processar(
+    conversa: Conversa,
+    evento: EventoConversa,
+    ctx: ContextoExecucao
+  ): Promise<ResultadoProcessamento> {
     switch (conversa.estadoAtual) {
-      case 'AGUARDANDO_INICIO': return this.aguardandoInicio(conversa, evento);
-      case 'SELECAO_SERVICO': return this.selecaoServico(conversa, evento);
-      case 'SELECAO_DIA': return this.selecaoDia(conversa, evento);
-      case 'SELECAO_HORARIO': return this.selecaoHorario(conversa, evento);
-      case 'CONFIRMACAO': return this.confirmacao(conversa, evento);
-      case 'CONCLUIDO': return this.concluido(conversa, evento);
-      case 'CANCELADO': return this.cancelado(conversa, evento);
-      case 'TIMEOUT': return this.timeout(conversa, evento);
+      case 'AGUARDANDO_INICIO': return this.aguardandoInicio(conversa, evento, ctx);
+      case 'SELECAO_SERVICO': return this.selecaoServico(conversa, evento, ctx);
+      case 'SELECAO_DIA': return this.selecaoDia(conversa, evento, ctx);
+      case 'SELECAO_HORARIO': return this.selecaoHorario(conversa, evento, ctx);
+      case 'CONFIRMACAO': return this.confirmacao(conversa, evento, ctx);
+      case 'CONCLUIDO': return this.concluido(conversa, evento, ctx);
+      case 'CANCELADO': return this.cancelado(conversa, evento, ctx);
+      case 'TIMEOUT': return this.timeout(conversa, evento, ctx);
     }
   }
 
-  // AGUARDANDO_INICIO — qualquer mensagem inicia: cumprimenta e apresenta o menu de serviços.
-  private async aguardandoInicio(conversa: Conversa, evento: EventoConversa): Promise<ResultadoProcessamento> {
+  private async aguardandoInicio(conversa: Conversa, evento: EventoConversa, ctx: ContextoExecucao): Promise<ResultadoProcessamento> {
     if (evento.tipo !== 'mensagem') return this.mensagemInvalida(conversa);
+    const servicos = await this.agenda.listarServicosAtivos(ctx.profissionalId);
+    const menu = servicos.map((s, i) => `${i + 1}. ${s.nome} (${s.duracaoMinutos} min)`).join('\n');
     return {
       novoEstado: 'SELECAO_SERVICO',
       contexto: conversa.contexto,
-      respostas: ['Olá! 👋 Escolha um dos nossos serviços:'],
+      respostas: [`Olá! 👋 Escolha um dos nossos serviços:\n${menu}`],
     };
   }
 
-  // SELECAO_SERVICO — cliente escolhe o serviço (número, nome ou mensagem livre interpretada pela IA).
-  private async selecaoServico(conversa: Conversa, evento: EventoConversa): Promise<ResultadoProcessamento> {
+  private async selecaoServico(conversa: Conversa, evento: EventoConversa, ctx: ContextoExecucao): Promise<ResultadoProcessamento> {
     if (evento.tipo !== 'mensagem') return this.mensagemInvalida(conversa);
     const servico = evento.intencao.entidades.servico;
     if (!servico) return this.mensagemInvalida(conversa, 'Não entendi o serviço. Escolha uma das opções:');
+    const servicoId = Number(servico);
+    const servicoReal = await this.agenda.obterServico(ctx.profissionalId, servicoId);
+    if (!servicoReal) return this.mensagemInvalida(conversa, 'Serviço não encontrado. Escolha uma das opções:');
     return {
       novoEstado: 'SELECAO_DIA',
-      contexto: { ...conversa.contexto, servicoSelecionado: Number(servico) },
-      respostas: ['Serviço selecionado! ✅ Para qual dia você quer agendar?'],
+      contexto: { ...conversa.contexto, servicoSelecionado: servicoId },
+      respostas: [`Serviço selecionado: ${servicoReal.nome} ✅\nPara qual dia você quer agendar?`],
     };
   }
 
-  // SELECAO_DIA — cliente escolhe o dia; a máquina consulta a agenda real e mostra os horários.
-  private async selecaoDia(conversa: Conversa, evento: EventoConversa): Promise<ResultadoProcessamento> {
+  private async selecaoDia(conversa: Conversa, evento: EventoConversa, ctx: ContextoExecucao): Promise<ResultadoProcessamento> {
     if (evento.tipo !== 'mensagem') return this.mensagemInvalida(conversa);
     const dia = evento.intencao.entidades.dia;
     if (!dia) return this.mensagemInvalida(conversa, 'Não entendi o dia. Tente "amanhã", "quarta" ou "dia 21":');
-    // TODO (Etapa 4): resolver o dia no fuso America/Sao_Paulo, chamar Q1+Q2 e slotsLivres.
+    const diaResolvido = resolverDia(dia, new Date(), this.fuso);
+    if (!diaResolvido) return this.mensagemInvalida(conversa, 'Não entendi o dia. Tente "amanhã", "quarta" ou "dia 21":');
+
+    const servicoId = conversa.contexto.servicoSelecionado;
+    if (!servicoId) return this.mensagemInvalida(conversa, 'Precisamos escolher o serviço primeiro:');
+    const servico = await this.agenda.obterServico(ctx.profissionalId, servicoId);
+    if (!servico) return this.mensagemInvalida(conversa, 'Serviço não encontrado. Vamos recomeçar:');
+
+    const diaSemana = new Date(`${diaResolvido}T00:00:00Z`).getDay();
+    const intervalos = await this.agenda.listarHorariosDoDia(ctx.profissionalId, diaSemana);
+    if (intervalos.length === 0) {
+      return this.mensagemInvalida(conversa, 'Não há horários de atendimento nesse dia. Escolha outro dia:');
+    }
+
+    const inicioDoDia = `${diaResolvido}T00:00:00.000Z`;
+    const inicioProximoDia = `${diaResolvido}T00:00:00.000Z`; // TODO: +1 dia no fuso
+    const ocupados = await this.agenda.listarOcupadosDoDia(ctx.profissionalId, inicioDoDia, inicioProximoDia);
+    const slots = slotsLivres(intervalos, ocupados, servico.duracaoMinutos, diaResolvido, this.regras.antecedenciaMinimaMinutos);
+
+    if (slots.length === 0) {
+      return this.mensagemInvalida(conversa, 'Não há horários livres nesse dia. Escolha outro dia:');
+    }
+
+    const lista = slots.map((s, i) => `${i + 1}. ${formatarHorario(s.inicio)}`).join('\n');
     return {
       novoEstado: 'SELECAO_HORARIO',
-      contexto: { ...conversa.contexto, diaSelecionado: dia },
-      respostas: ['Esses são os horários disponíveis:'],
+      contexto: { ...conversa.contexto, diaSelecionado: diaResolvido },
+      respostas: [`Horários disponíveis em ${diaResolvido}:\n${lista}\nEscolha um horário:`],
     };
   }
 
-  // SELECAO_HORARIO — cliente escolhe o horário; a máquina valida o slot (Q3) e pede confirmação.
-  private async selecaoHorario(conversa: Conversa, evento: EventoConversa): Promise<ResultadoProcessamento> {
+  private async selecaoHorario(conversa: Conversa, evento: EventoConversa, ctx: ContextoExecucao): Promise<ResultadoProcessamento> {
     if (evento.tipo !== 'mensagem') return this.mensagemInvalida(conversa);
     const horario = evento.intencao.entidades.horario;
     if (!horario) return this.mensagemInvalida(conversa, 'Não entendi o horário. Tente "14:30":');
-    // TODO (Etapa 4): validar o slot com Q3 (verificarConflito) antes de avançar.
+    // TODO (Etapa 4): converter "14:30" em ISO-8601 UTC no fuso e validar com Q3.
     return {
       novoEstado: 'CONFIRMACAO',
       contexto: { ...conversa.contexto, horarioSelecionado: horario },
@@ -87,35 +128,34 @@ export class MaquinaEstados {
     };
   }
 
-  // CONFIRMACAO — a IA NÃO decide aqui: a máquina valida o slot contra a agenda real (Q3) e grava (Q4).
-  private async confirmacao(conversa: Conversa, evento: EventoConversa): Promise<ResultadoProcessamento> {
+  private async confirmacao(conversa: Conversa, evento: EventoConversa, ctx: ContextoExecucao): Promise<ResultadoProcessamento> {
     if (evento.tipo !== 'mensagem') return this.mensagemInvalida(conversa);
     if (evento.intencao.intencao === 'cancelar') {
       return {
         novoEstado: 'SELECAO_SERVICO',
-        contexto: { ...conversa.contexto, servicoSelecionado: undefined, diaSelecionado: undefined, horarioSelecionado: undefined },
+        contexto: { servicoSelecionado: undefined, diaSelecionado: undefined, horarioSelecionado: undefined },
         respostas: ['Sem problemas! Vamos recomeçar. Escolha um serviço:'],
       };
     }
     if (evento.intencao.intencao !== 'confirmar') {
       return this.mensagemInvalida(conversa, 'Responda "sim" para confirmar ou "não" para recomeçar.');
     }
-    // TODO (Etapa 4): Q3 (conflito) + Q4 (criar agendamento) + agendar lembrete 24h.
+    // TODO (Etapa 4): montar inicio/fim ISO-8601 UTC, validar Q3 e retornar criar_agendamento.
     return {
       novoEstado: 'CONCLUIDO',
       contexto: conversa.contexto,
       respostas: ['Agendamento confirmado! ✅ Enviamos o resumo.'],
       acao: 'criar_agendamento',
       dadosAgendamento: {
+        profissionalId: ctx.profissionalId,
         servicoId: conversa.contexto.servicoSelecionado ?? 0,
-        dia: conversa.contexto.diaSelecionado ?? '',
-        horario: conversa.contexto.horarioSelecionado ?? '',
+        inicio: '',
+        fim: '',
       },
     };
   }
 
-  // CONCLUIDO — terminal. Nova mensagem reinicia a conversa.
-  private async concluido(conversa: Conversa, evento: EventoConversa): Promise<ResultadoProcessamento> {
+  private async concluido(conversa: Conversa, evento: EventoConversa, ctx: ContextoExecucao): Promise<ResultadoProcessamento> {
     if (evento.tipo !== 'mensagem') return this.mensagemInvalida(conversa);
     return {
       novoEstado: 'AGUARDANDO_INICIO',
@@ -124,8 +164,7 @@ export class MaquinaEstados {
     };
   }
 
-  // CANCELADO — profissional cancelou; oferece remarcação. "sim" volta para SELECAO_SERVICO.
-  private async cancelado(conversa: Conversa, evento: EventoConversa): Promise<ResultadoProcessamento> {
+  private async cancelado(conversa: Conversa, evento: EventoConversa, ctx: ContextoExecucao): Promise<ResultadoProcessamento> {
     if (evento.tipo !== 'mensagem') return this.mensagemInvalida(conversa);
     if (evento.intencao.intencao === 'confirmar') {
       return {
@@ -141,8 +180,7 @@ export class MaquinaEstados {
     };
   }
 
-  // TIMEOUT — sem resposta em 10 min: encerra com mensagem amigável e limpa o KV.
-  private async timeout(conversa: Conversa, evento: EventoConversa): Promise<ResultadoProcessamento> {
+  private async timeout(conversa: Conversa, evento: EventoConversa, ctx: ContextoExecucao): Promise<ResultadoProcessamento> {
     return {
       novoEstado: 'TIMEOUT',
       contexto: conversa.contexto,
@@ -151,7 +189,6 @@ export class MaquinaEstados {
     };
   }
 
-  // Mensagem inválida em qualquer estado: re-apresenta as opções do estado atual — nunca inventa caminho.
   private mensagemInvalida(conversa: Conversa, texto = 'Não entendi. Vamos tentar de novo:'): ResultadoProcessamento {
     return {
       novoEstado: conversa.estadoAtual,
@@ -159,4 +196,8 @@ export class MaquinaEstados {
       respostas: [texto],
     };
   }
+}
+
+function formatarHorario(iso: string): string {
+  return iso.slice(11, 16); // 'HH:MM' do ISO-8601 UTC
 }

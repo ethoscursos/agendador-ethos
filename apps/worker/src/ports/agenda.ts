@@ -87,4 +87,6 @@ export interface AgendaPort {
   ): Promise<boolean>;
   // Q7 — buscar/inserir cliente por telefone (cliente global — D1)
   buscarOuCriarCliente(nome: string, telefone: string, criadoEm: string): Promise<Cliente>;
+  listarServicosAtivos(profissionalId: number): Promise<Servico[]>;
+  obterServico(profissionalId: number, servicoId: number): Promise<Servico | null>;
 }
