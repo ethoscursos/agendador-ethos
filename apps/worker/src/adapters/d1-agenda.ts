@@ -187,4 +187,33 @@ export class D1AgendaAdapter implements AgendaPort {
       ativo: r.ativo,
     };
   }
+  // Novo (Etapa 7): agendamentos confirmados do dia alvo com cliente e serviço — alimenta o cron de lembretes.
+async listarLembretesDoDia(
+  profissionalId: number,
+  inicioDoDia: string,
+  inicioProximoDia: string
+): Promise<LembreteDoDia[]> {
+  const { results } = await this.db
+    .prepare(
+      `SELECT a.id, a.profissional_id, a.data_hora_inicio,
+              c.telefone AS cliente_telefone, c.nome AS cliente_nome,
+              s.nome AS servico_nome
+       FROM agendamento a
+       JOIN cliente c ON c.id = a.cliente_id
+       JOIN servico s ON s.id = a.servico_id
+       WHERE a.profissional_id = ? AND a.status = 'confirmado'
+         AND a.data_hora_inicio >= ? AND a.data_hora_inicio < ?
+       ORDER BY a.data_hora_inicio`
+    )
+    .bind(profissionalId, inicioDoDia, inicioProximoDia)
+    .all<{ id: number; profissional_id: number; data_hora_inicio: string; cliente_telefone: string; cliente_nome: string; servico_nome: string }>();
+  return results.map((r) => ({
+    id: r.id,
+    profissionalId: r.profissional_id,
+    clienteTelefone: r.cliente_telefone,
+    clienteNome: r.cliente_nome,
+    servicoNome: r.servico_nome,
+    dataHoraInicio: r.data_hora_inicio,
+  }));
+}
 }
