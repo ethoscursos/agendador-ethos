@@ -8,6 +8,7 @@ import { MaquinaEstados } from '../domain/maquina-estados';
 import { REGRAS_PADRAO } from '../domain/regras';
 import { D1AgendaAdapter } from '../adapters/d1-agenda';
 import { KvConversaAdapter } from '../adapters/kv-conversa';
+import { KvLembreteAdapter } from '../adapters/kv-lembrete';
 import { QueueMensageiroAdapter } from '../adapters/queue-mensageiro';
 import { AiInterpretadorAdapter } from '../adapters/ai-interpretador';
 
@@ -69,44 +70,42 @@ export function webhookRoutes(env: Env): Hono {
       await mensageiro.enviarTexto({ para: telefoneCliente, texto: resposta });
     }
 
-    // ... dentro do handler do webhook, após salvar o estado ...
+    // 6. Ações de escrita — quando a máquina decidiu criar o agendamento
+    if (resultado.acao === 'criar_agendamento' && resultado.dadosAgendamento) {
+      const { servicoId, inicio, fim } = resultado.dadosAgendamento;
+      // TODO (contrato WhatsApp): obter o nome do cliente do payload da Evolution
+      const nomeCliente = String(payload.nome_cliente ?? 'Cliente');
 
-// 6. Ações de escrita — quando a máquina decidiu criar o agendamento
-if (resultado.acao === 'criar_agendamento' && resultado.dadosAgendamento) {
-  const { servicoId, inicio, fim } = resultado.dadosAgendamento;
-  // TODO (contrato WhatsApp): obter o nome do cliente do payload da Evolution
-  const nomeCliente = String(payload.nome_cliente ?? 'Cliente');
+      const cliente = await agenda.buscarOuCriarCliente(
+        nomeCliente,
+        telefoneCliente,
+        new Date().toISOString()
+      );
 
-  const cliente = await agenda.buscarOuCriarCliente(
-    nomeCliente,
-    telefoneCliente,
-    new Date().toISOString()
-  );
+      const agendamentoId = await agenda.criarAgendamento({
+        profissionalId,
+        clienteId: cliente.id,
+        servicoId,
+        inicio,
+        fim,
+        criadoEm: new Date().toISOString(),
+      });
 
-  const criado = await agenda.criarAgendamento({
-    profissionalId,
-    clienteId: cliente.id,
-    servicoId,
-    inicio,
-    fim,
-    criadoEm: new Date().toISOString(),
-  });
-
-  if (criado) {
-    // Agendar lembrete 24h (dedup no LEMBRETE_KV)
-    const lembretes = new KvLembreteAdapter(env.LEMBRETE_KV);
-    await lembretes.agendar(0, inicio); // TODO: obter o id do agendamento criado
-    await mensageiro.enviarTexto({
-      para: telefoneCliente,
-      texto: 'Agendamento confirmado! ✅ Enviamos o resumo.',
-    });
-  } else {
-    await mensageiro.enviarTexto({
-      para: telefoneCliente,
-      texto: 'Infelizmente esse horário acabou de ser ocupado. Escolha outro, por favor.',
-    });
-  }
-}
+      if (agendamentoId !== null) {
+        // Agendar lembrete 24h com o id real (dedup no LEMBRETE_KV)
+        const lembretes = new KvLembreteAdapter(env.LEMBRETE_KV);
+        await lembretes.agendar(agendamentoId, inicio);
+        await mensageiro.enviarTexto({
+          para: telefoneCliente,
+          texto: 'Agendamento confirmado! ✅ Enviamos o resumo.',
+        });
+      } else {
+        await mensageiro.enviarTexto({
+          para: telefoneCliente,
+          texto: 'Infelizmente esse horário acabou de ser ocupado. Escolha outro, por favor.',
+        });
+      }
+    }
 
     return c.json({ ok: true });
   });
