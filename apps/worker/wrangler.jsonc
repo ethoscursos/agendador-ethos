@@ -8,14 +8,14 @@
     {
       "binding": "AGENDADOR_DB",
       "database_name": "agendador-ethos-d1",
-      "database_id": "<preencher após wrangler d1 create>",
+      "database_id": "edae617e-b927-45ec-974d-2707787116a8",
       "migrations_dir": "migrations"
     }
   ],
 
   "kv_namespaces": [
-    { "binding": "CONVERSA_KV", "id": "<preencher após kv namespace create>" },
-    { "binding": "LEMBRETE_KV", "id": "<preencher após kv namespace create>" }
+    { "binding": "CONVERSA_KV", "id": "8ac0f31faa614076a7261d4acbc9a99c" },
+    { "binding": "LEMBRETE_KV", "id": "f1f987ce2ab84e0d945604158212f0a1" }
   ],
 
   "queues": {
@@ -39,11 +39,11 @@
   },
 
   "triggers": {
-    "crons": ["0 8 * * *"]
+    "crons": ["0 11 * * *"]
   },
 
   "routes": [
-    { "pattern": "agendador.ethoscursos.com.br/webhook*", "zone_id": "<ZONE_ID>" },
-    { "pattern": "agendador.ethoscursos.com.br/api/*", "zone_id": "<ZONE_ID>" }
+    { "pattern": "agendador.ethoscursos.com.br/webhook*", "zone_id": "330f15f6d6ef37f935a1a4af9f690e29" },
+    { "pattern": "agendador.ethoscursos.com.br/api/*", "zone_id": "330f15f6d6ef37f935a1a4af9f690e29" }
   ]
 }

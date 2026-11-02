@@ -1,16 +1,20 @@
 import type { Env } from '../env';
-import { inicioDoDiaUtc, inicioProximoDiaUtc } from '../domain/fuso';
+import {
+  inicioDoDiaUtc,
+  inicioProximoDiaUtc,
+  diaNoFuso,
+  proximoDia,
+} from '../domain/fuso';
 import { D1AgendaAdapter } from '../adapters/d1-agenda';
 import { KvLembreteAdapter } from '../adapters/kv-lembrete';
 import { QueueMensageiroAdapter } from '../adapters/queue-mensageiro';
 
-export async function processarCron(env: Env): Promise<void> {
-  const agora = new Date();
-  const proximo = new Date(agora.getTime() + 24 * 60 * 60 * 1000);
-  const diaAlvo = proximo.toISOString().slice(0, 10);
+export async function processarCron(env: Env, agora: Date = new Date()): Promise<void> {
+  // Dia alvo derivado NO FUSO (America/Sao_Paulo), não em UTC puro — robusto mesmo
+  // se o horário do cron mudar para antes das 03:00 BRT (RDA v24, Seção 27.2).
+  const diaAlvo = proximoDia(diaNoFuso(agora, env.FUSO));
 
-  // Fronteiras do dia seguinte em UTC, calculadas a partir de America/Sao_Paulo
-  // (ponto de atenção da Seção 24.3 do RDA v22 — Q8)
+  // Fronteiras do dia seguinte em UTC, calculadas a partir do fuso (Seção 24.3 / Q8).
   const inicioProximoDia = inicioDoDiaUtc(diaAlvo, env.FUSO);
   const inicioDoDiaSeguinte = inicioProximoDiaUtc(diaAlvo, env.FUSO);
 

@@ -7,6 +7,7 @@ import type { AgendaPort } from '../ports/agenda';
 import type { RegrasAgendamento } from './regras';
 import { slotsLivres } from './slots';
 import { resolverDia } from './dias';
+import { inicioDoDiaUtc, inicioProximoDiaUtc } from './fuso';
 
 export interface ContextoExecucao {
   profissionalId: number;
@@ -40,21 +41,22 @@ export class MaquinaEstados {
   ) {}
 
   async processar(
-    conversa: Conversa,
-    evento: EventoConversa,
-    ctx: ContextoExecucao
-  ): Promise<ResultadoProcessamento> {
-    switch (conversa.estadoAtual) {
-      case 'AGUARDANDO_INICIO': return this.aguardandoInicio(conversa, evento, ctx);
-      case 'SELECAO_SERVICO': return this.selecaoServico(conversa, evento, ctx);
-      case 'SELECAO_DIA': return this.selecaoDia(conversa, evento, ctx);
-      case 'SELECAO_HORARIO': return this.selecaoHorario(conversa, evento, ctx);
-      case 'CONFIRMACAO': return this.confirmacao(conversa, evento, ctx);
-      case 'CONCLUIDO': return this.concluido(conversa, evento, ctx);
-      case 'CANCELADO': return this.cancelado(conversa, evento, ctx);
-      case 'TIMEOUT': return this.timeout(conversa, evento, ctx);
-    }
+  conversa: Conversa,
+  evento: EventoConversa,
+  ctx: ContextoExecucao,
+  agora: Date = new Date()
+): Promise<ResultadoProcessamento> {
+  switch (conversa.estadoAtual) {
+    case 'AGUARDANDO_INICIO': return this.aguardandoInicio(conversa, evento, ctx);
+    case 'SELECAO_SERVICO': return this.selecaoServico(conversa, evento, ctx);
+    case 'SELECAO_DIA': return this.selecaoDia(conversa, evento, ctx, agora);
+    case 'SELECAO_HORARIO': return this.selecaoHorario(conversa, evento, ctx);
+    case 'CONFIRMACAO': return this.confirmacao(conversa, evento, ctx);
+    case 'CONCLUIDO': return this.concluido(conversa, evento, ctx);
+    case 'CANCELADO': return this.cancelado(conversa, evento, ctx);
+    case 'TIMEOUT': return this.timeout(conversa, evento, ctx);
   }
+}
 
   private async aguardandoInicio(conversa: Conversa, evento: EventoConversa, ctx: ContextoExecucao): Promise<ResultadoProcessamento> {
     if (evento.tipo !== 'mensagem') return this.mensagemInvalida(conversa);
@@ -81,40 +83,54 @@ export class MaquinaEstados {
     };
   }
 
-  private async selecaoDia(conversa: Conversa, evento: EventoConversa, ctx: ContextoExecucao): Promise<ResultadoProcessamento> {
-    if (evento.tipo !== 'mensagem') return this.mensagemInvalida(conversa);
-    const dia = evento.intencao.entidades.dia;
-    if (!dia) return this.mensagemInvalida(conversa, 'Não entendi o dia. Tente "amanhã", "quarta" ou "dia 21":');
-    const diaResolvido = resolverDia(dia, new Date(), this.fuso);
-    if (!diaResolvido) return this.mensagemInvalida(conversa, 'Não entendi o dia. Tente "amanhã", "quarta" ou "dia 21":');
+  private async selecaoDia(
+  conversa: Conversa,
+  evento: EventoConversa,
+  ctx: ContextoExecucao,
+  agora: Date
+): Promise<ResultadoProcessamento> {
+  if (evento.tipo !== 'mensagem') return this.mensagemInvalida(conversa);
+  const dia = evento.intencao.entidades.dia;
+  if (!dia) return this.mensagemInvalida(conversa, 'Não entendi o dia. Tente "amanhã", "quarta" ou "dia 21":');
+  const diaResolvido = resolverDia(dia, agora, this.fuso); // relógio injetado (D-ET-11)
+  if (!diaResolvido) return this.mensagemInvalida(conversa, 'Não entendi o dia. Tente "amanhã", "quarta" ou "dia 21":');
 
-    const servicoId = conversa.contexto.servicoSelecionado;
-    if (!servicoId) return this.mensagemInvalida(conversa, 'Precisamos escolher o serviço primeiro:');
-    const servico = await this.agenda.obterServico(ctx.profissionalId, servicoId);
-    if (!servico) return this.mensagemInvalida(conversa, 'Serviço não encontrado. Vamos recomeçar:');
+  const servicoId = conversa.contexto.servicoSelecionado;
+  if (!servicoId) return this.mensagemInvalida(conversa, 'Precisamos escolher o serviço primeiro:');
+  const servico = await this.agenda.obterServico(ctx.profissionalId, servicoId);
+  if (!servico) return this.mensagemInvalida(conversa, 'Serviço não encontrado. Vamos recomeçar:');
 
-    const diaSemana = new Date(`${diaResolvido}T00:00:00Z`).getDay();
-    const intervalos = await this.agenda.listarHorariosDoDia(ctx.profissionalId, diaSemana);
-    if (intervalos.length === 0) {
-      return this.mensagemInvalida(conversa, 'Não há horários de atendimento nesse dia. Escolha outro dia:');
-    }
-
-    const inicioDoDia = `${diaResolvido}T00:00:00.000Z`;
-    const inicioProximoDia = `${diaResolvido}T00:00:00.000Z`; // TODO: +1 dia no fuso
-    const ocupados = await this.agenda.listarOcupadosDoDia(ctx.profissionalId, inicioDoDia, inicioProximoDia);
-    const slots = slotsLivres(intervalos, ocupados, servico.duracaoMinutos, diaResolvido, this.regras.antecedenciaMinimaMinutos);
-
-    if (slots.length === 0) {
-      return this.mensagemInvalida(conversa, 'Não há horários livres nesse dia. Escolha outro dia:');
-    }
-
-    const lista = slots.map((s, i) => `${i + 1}. ${formatarHorario(s.inicio)}`).join('\n');
-    return {
-      novoEstado: 'SELECAO_HORARIO',
-      contexto: { ...conversa.contexto, diaSelecionado: diaResolvido },
-      respostas: [`Horários disponíveis em ${diaResolvido}:\n${lista}\nEscolha um horário:`],
-    };
+  const diaSemana = new Date(`${diaResolvido}T00:00:00Z`).getDay();
+  const intervalos = await this.agenda.listarHorariosDoDia(ctx.profissionalId, diaSemana);
+  if (intervalos.length === 0) {
+    return this.mensagemInvalida(conversa, 'Não há horários de atendimento nesse dia. Escolha outro dia:');
   }
+
+  // Fronteiras do dia em UTC a partir do fuso (Seção 24.3) — corrige o TODO "+1 dia no fuso"
+  // (RDA v24, Seção 27.3a): antes, inicioProximoDia == inicioDoDia → janela zero na Q2.
+  const inicioDoDia = inicioDoDiaUtc(diaResolvido, this.fuso);
+  const inicioProximoDia = inicioProximoDiaUtc(diaResolvido, this.fuso);
+  const ocupados = await this.agenda.listarOcupadosDoDia(ctx.profissionalId, inicioDoDia, inicioProximoDia);
+  const slots = slotsLivres(
+    intervalos,
+    ocupados,
+    servico.duracaoMinutos,
+    diaResolvido,
+    this.regras.antecedenciaMinimaMinutos,
+    agora // relógio injetado — filtro de antecedência determinístico
+  );
+
+  if (slots.length === 0) {
+    return this.mensagemInvalida(conversa, 'Não há horários livres nesse dia. Escolha outro dia:');
+  }
+
+  const lista = slots.map((s, i) => `${i + 1}. ${formatarHorario(s.inicio)}`).join('\n');
+  return {
+    novoEstado: 'SELECAO_HORARIO',
+    contexto: { ...conversa.contexto, diaSelecionado: diaResolvido },
+    respostas: [`Horários disponíveis em ${diaResolvido}:\n${lista}\nEscolha um horário:`],
+  };
+}
 
   private async selecaoHorario(conversa: Conversa, evento: EventoConversa, ctx: ContextoExecucao): Promise<ResultadoProcessamento> {
     if (evento.tipo !== 'mensagem') return this.mensagemInvalida(conversa);
