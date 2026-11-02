@@ -38,13 +38,14 @@
 -- ============================================================
 
 CREATE TABLE profissional (
-    id                INTEGER PRIMARY KEY,
-    nome              TEXT    NOT NULL,
-    telefone_whatsapp TEXT    NOT NULL UNIQUE,
-    email             TEXT    NOT NULL UNIQUE,
-    senha_hash        TEXT    NOT NULL,
-    status            TEXT    NOT NULL DEFAULT 'ativo' CHECK (status IN ('ativo','inativo')),
-    criado_em         TEXT    NOT NULL
+    id                  INTEGER PRIMARY KEY,
+    nome                TEXT    NOT NULL,
+    telefone_whatsapp   TEXT    NOT NULL UNIQUE,
+    email               TEXT    NOT NULL UNIQUE,
+    senha_hash          TEXT    NOT NULL,
+    instancia_evolution TEXT    UNIQUE,
+    status              TEXT    NOT NULL DEFAULT 'ativo' CHECK (status IN ('ativo','inativo')),
+    criado_em           TEXT    NOT NULL
 );
 
 CREATE TABLE servico (

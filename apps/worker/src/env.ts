@@ -11,4 +11,6 @@ export interface Env {
   ANTECEDENCIA_MINUTOS: string;
   EVOLUTION_API_URL: string;
   SEGREDO_SESSAO: string;
+  INSTANCIA_PROFISSIONAL_MAP: string;
+  INSTANCIA_APIKEY_MAP: string;
 }

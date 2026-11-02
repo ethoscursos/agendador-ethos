@@ -1,17 +1,18 @@
 -- ============================================================
--- AGENDADOR ETHOS — Pacote SQL Consolidado (Migration + Queries)
+-- AGENDADOR ETHOS — Pacote SQL Consolidado v1.1 (Migration + Queries)
 -- Repositório: github.com/ethoscursos/agendador-ethos
 -- ============================================================
 -- Responsável: Expert Banco de Dados (Ethos Cursos)
--- Data: 22 de outubro de 2026
--- Versão: 1.0
+-- Data: 2 de novembro de 2026
+-- Versão: 1.1
 -- Status: Parte A aprovada (retorno v1.2) + adição Q8 (Parte B v1.0)
+--         + costura instancia_evolution (D-CF-1/2/3, 02/11/2026)
 --
 -- Referências canônicas:
---   RDA v21 (Seções 8, 9, 10, 11, 16.1, 16.3, 21.1)
+--   RDA v22 (Seções 8, 9, 10, 11, 16.1, 16.3, 21.1)
 --   Briefing Expert Banco de Dados v3.2
---   Retorno agenda_ethos_revisao_banco_dados_v1.2 (Aprovado)
---   Retorno agenda_ethos_parte_b_banco_dados_v1.0
+--   Solicitação de Costura Expert Cloudflare v1.0 (02/11/2026)
+--   Resposta à Costura agenda_ethos_resposta_costura_instancia_evolution_v1.0
 --
 -- Decisões do arquiteto:
 --   D1: Cliente global — telefone único no sistema inteiro, sem
@@ -20,24 +21,32 @@
 --       parametrizadas no domínio TypeScript (fora deste SQL).
 --   D3: Retenção indefinida no MVP — sem limpeza automática.
 --
+-- Decisões da costura (v1.1):
+--   D-CF-1: instancia_evolution TEXT UNIQUE (nullable) — UNIQUE aceita
+--           múltiplos NULLs no SQLite e no PostgreSQL.
+--   D-CF-2: coluna incluída na 0001 (deploy ainda não executado).
+--   D-CF-3: sem impacto nos índices existentes; UNIQUE cria o índice
+--           implícito do webhook (instância → profissional).
+--
 -- Nota de idempotência: migrations controladas pelo wrangler
 -- (aplicadas uma vez por banco). Sem CREATE IF NOT EXISTS de
 -- propósito — evita mascarar erros reais.
 -- ============================================================
 
 -- ============================================================
--- PARTE 1 — MIGRATION 0001_init.sql
+-- PARTE 1 — MIGRATION 0001_init.sql v1.1
 -- Aplicar via: wrangler d1 migrations apply
 -- ============================================================
 
 CREATE TABLE profissional (
-    id                INTEGER PRIMARY KEY,
-    nome              TEXT    NOT NULL,
-    telefone_whatsapp TEXT    NOT NULL UNIQUE,
-    email             TEXT    NOT NULL UNIQUE,
-    senha_hash        TEXT    NOT NULL,
-    status            TEXT    NOT NULL DEFAULT 'ativo' CHECK (status IN ('ativo','inativo')),
-    criado_em         TEXT    NOT NULL
+    id                  INTEGER PRIMARY KEY,
+    nome                TEXT    NOT NULL,
+    telefone_whatsapp   TEXT    NOT NULL UNIQUE,
+    email               TEXT    NOT NULL UNIQUE,
+    senha_hash          TEXT    NOT NULL,
+    instancia_evolution TEXT    UNIQUE,
+    status              TEXT    NOT NULL DEFAULT 'ativo' CHECK (status IN ('ativo','inativo')),
+    criado_em           TEXT    NOT NULL
 );
 
 CREATE TABLE servico (
@@ -100,6 +109,8 @@ CREATE INDEX idx_agendamento_profissional_inicio
 -- ============================================================
 -- PARTE 2 — QUERIES DE DISPONIBILIDADE E AGENDAMENTO (Q1–Q7)
 -- Parâmetros nomeados (:param) — D1 e PostgreSQL
+-- Inalteradas pela costura (instancia_evolution não participa
+-- de nenhuma query de negócio)
 -- ============================================================
 
 -- Q1 — Horários de atendimento do dia (disponibilidade, passo 1)
