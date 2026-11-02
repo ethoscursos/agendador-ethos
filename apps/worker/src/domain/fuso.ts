@@ -55,3 +55,23 @@ export function inicioProximoDiaUtc(dia: string, fuso: string): string {
   const diaStr = proximo.toISOString().slice(0, 10);
   return inicioDoDiaUtc(diaStr, fuso);
 }
+
+// Dia corrente ('YYYY-MM-DD') no fuso, a partir de um instante UTC.
+export function diaNoFuso(agora: Date, fuso: string): string {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: fuso,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const partes = Object.fromEntries(
+    dtf.formatToParts(agora).map((p) => [p.type, p.value])
+  );
+  return `${partes.year}-${partes.month}-${partes.day}`;
+}
+
+// Dia seguinte ('YYYY-MM-DD') a partir de um dia no fuso.
+export function proximoDia(dia: string): string {
+  const [y, mo, d] = dia.split('-').map(Number);
+  return new Date(Date.UTC(y, mo - 1, d + 1)).toISOString().slice(0, 10);
+}
