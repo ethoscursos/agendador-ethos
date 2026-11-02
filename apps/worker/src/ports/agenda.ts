@@ -91,5 +91,5 @@ export interface AgendaPort {
   buscarOuCriarCliente(nome: string, telefone: string, criadoEm: string): Promise<Cliente>;
   listarServicosAtivos(profissionalId: number): Promise<Servico[]>;
   obterServico(profissionalId: number, servicoId: number): Promise<Servico | null>;
-listarLembretesDoDia(profissionalId: number, inicioDoDia: string, inicioProximoDia: string): Promise<LembreteDoDia[]>;
+listarLembretesDoDia(inicioProximoDia: string, inicioDoDiaSeguinte: string): Promise<LembreteDoDia[]>;
 }

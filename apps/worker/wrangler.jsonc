@@ -27,7 +27,23 @@
     ]
   },
 
+  "ai": {
+    "binding": "AI"
+  },
+
+  "vars": {
+    "FUSO": "America/Sao_Paulo",
+    "TIMEOUT_MINUTOS": 30,
+    "INSTANCIA_PROFISSIONAL_MAP": "prof7=7",
+    "INSTANCIA_APIKEY_MAP": "prof7=<APIKEY_DA_INSTANCIA>"
+  },
+
   "triggers": {
     "crons": ["0 8 * * *"]
-  }
+  },
+
+  "routes": [
+    { "pattern": "agendador.ethoscursos.com.br/webhook*", "zone_id": "<ZONE_ID>" },
+    { "pattern": "agendador.ethoscursos.com.br/api/*", "zone_id": "<ZONE_ID>" }
+  ]
 }

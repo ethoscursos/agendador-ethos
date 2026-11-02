@@ -134,24 +134,57 @@ async criarAgendamento(dados: {
   }
 
   // Q7 — buscar/inserir cliente por telefone (cliente global — D1)
-  async buscarOuCriarCliente(nome: string, telefone: string, criadoEm: string): Promise<Cliente> {
-    const existente = await this.db
-      .prepare('SELECT id, nome, telefone, criado_em FROM cliente WHERE telefone = ?')
-      .bind(telefone)
-      .first<{ id: number; nome: string; telefone: string; criado_em: string }>();
-    if (existente) {
-      return { id: existente.id, nome: existente.nome, telefone: existente.telefone, criadoEm: existente.criado_em };
-    }
-    await this.db
-      .prepare('INSERT INTO cliente (nome, telefone, criado_em) VALUES (?, ?, ?) ON CONFLICT (telefone) DO NOTHING')
-      .bind(nome, telefone, criadoEm)
-      .run();
-    const criado = await this.db
-      .prepare('SELECT id, nome, telefone, criado_em FROM cliente WHERE telefone = ?')
-      .bind(telefone)
-      .first<{ id: number; nome: string; telefone: string; criado_em: string }>();
-    return { id: criado!.id, nome: criado!.nome, telefone: criado!.telefone, criadoEm: criado!.criado_em };
+  async buscarOuCriarCliente(
+  nome: string,
+  telefone: string,
+  criadoEm: string
+): Promise<{ id: number; nome: string; telefone: string; criadoEm: string }> {
+  // 1. Buscar
+  const existente = await this.db
+    .prepare(
+      `SELECT id, nome, telefone, criado_em
+       FROM cliente
+       WHERE telefone = ?`
+    )
+    .bind(telefone)
+    .first<{ id: number; nome: string; telefone: string; criado_em: string }>();
+
+  if (existente) {
+    return {
+      id: existente.id,
+      nome: existente.nome,
+      telefone: existente.telefone,
+      criadoEm: existente.criado_em,
+    };
   }
+
+  // 2. Inserir (idempotente — se outra requisição criou no meio, não duplica)
+  await this.db
+    .prepare(
+      `INSERT INTO cliente (nome, telefone, criado_em)
+       VALUES (?, ?, ?)
+       ON CONFLICT (telefone) DO NOTHING`
+    )
+    .bind(nome, telefone, criadoEm)
+    .run();
+
+  // 3. Retornar o registro (criado ou já existente)
+  const criado = await this.db
+    .prepare(
+      `SELECT id, nome, telefone, criado_em
+       FROM cliente
+       WHERE telefone = ?`
+    )
+    .bind(telefone)
+    .first<{ id: number; nome: string; telefone: string; criado_em: string }>();
+
+  return {
+    id: criado!.id,
+    nome: criado!.nome,
+    telefone: criado!.telefone,
+    criadoEm: criado!.criado_em,
+  };
+}
 
   // Novo (Etapa 4): listar serviços ativos — cobre o menu do WhatsApp (idx_servico_profissional_ativo)
   async listarServicosAtivos(profissionalId: number): Promise<Servico[]> {
@@ -193,9 +226,8 @@ async criarAgendamento(dados: {
   }
   // Novo (Etapa 7): agendamentos confirmados do dia alvo com cliente e serviço — alimenta o cron de lembretes.
 async listarLembretesDoDia(
-  profissionalId: number,
-  inicioDoDia: string,
-  inicioProximoDia: string
+  inicioProximoDia: string,
+  inicioDoDiaSeguinte: string
 ): Promise<LembreteDoDia[]> {
   const { results } = await this.db
     .prepare(
@@ -205,12 +237,20 @@ async listarLembretesDoDia(
        FROM agendamento a
        JOIN cliente c ON c.id = a.cliente_id
        JOIN servico s ON s.id = a.servico_id
-       WHERE a.profissional_id = ? AND a.status = 'confirmado'
-         AND a.data_hora_inicio >= ? AND a.data_hora_inicio < ?
+       WHERE a.status = 'confirmado'
+         AND a.data_hora_inicio >= ?
+         AND a.data_hora_inicio < ?
        ORDER BY a.data_hora_inicio`
     )
-    .bind(profissionalId, inicioDoDia, inicioProximoDia)
-    .all<{ id: number; profissional_id: number; data_hora_inicio: string; cliente_telefone: string; cliente_nome: string; servico_nome: string }>();
+    .bind(inicioProximoDia, inicioDoDiaSeguinte)
+    .all<{
+      id: number;
+      profissional_id: number;
+      data_hora_inicio: string;
+      cliente_telefone: string;
+      cliente_nome: string;
+      servico_nome: string;
+    }>();
   return results.map((r) => ({
     id: r.id,
     profissionalId: r.profissional_id,
