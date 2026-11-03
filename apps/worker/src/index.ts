@@ -1,7 +1,4 @@
 // index.ts — entrypoint do Worker (Hono)
-// Rotas: /webhook/* (entrada da Evolution API), /api/auth/* (login/logout), /api/* (painel)
-// Handlers: queue() (consumer da fila) e scheduled() (cron de lembretes).
-
 import { Hono } from 'hono';
 import type { Env } from './env';
 import { webhookRoutes } from './routes/webhook';
@@ -12,24 +9,26 @@ import { D1AutenticacaoAdapter } from './adapters/d1-autenticacao';
 import { processarFila } from './handlers/queue';
 import { processarCron } from './handlers/cron';
 
-const app = new Hono();
-
-app.get('/health', (c) => c.json({ status: 'ok' }));
-
-app.use('*', async (c, next) => {
-  const env = c.env as Env;
+// Monta o app com TODAS as rotas registradas no top-level.
+// Os adapters são criados aqui porque o env só existe dentro do handler fetch.
+function criarApp(env: Env) {
   const agenda = new D1AgendaAdapter(env.AGENDADOR_DB);
   const autenticacao = new D1AutenticacaoAdapter(env.AGENDADOR_DB);
 
+  const app = new Hono<{ Bindings: Env }>();
+
+  app.get('/health', (c) => c.json({ status: 'ok' }));
+
+  // Rotas registradas ANTES de qualquer request — matcher construído uma única vez
   app.route('/webhook', webhookRoutes(env));
   app.route('/api/auth', authRoutes(autenticacao, env));
   app.route('/api', painelRoutes(agenda, env));
 
-  await next();
-});
+  return app;
+}
 
 export default {
-  fetch: app.fetch,
+  fetch: (req, env, ctx) => criarApp(env).fetch(req, env, ctx),
   queue: processarFila,
   scheduled: processarCron,
 };
