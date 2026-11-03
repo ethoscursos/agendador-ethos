@@ -44,6 +44,7 @@
 
   "routes": [
     { "pattern": "agendador.ethoscursos.com.br/webhook*", "zone_id": "330f15f6d6ef37f935a1a4af9f690e29" },
-    { "pattern": "agendador.ethoscursos.com.br/api/*", "zone_id": "330f15f6d6ef37f935a1a4af9f690e29" }
+    { "pattern": "agendador.ethoscursos.com.br/api/*", "zone_id": "330f15f6d6ef37f935a1a4af9f690e29" },
+    { "pattern": "agendador.ethoscursos.com.br/health", "zone_id": "330f15f6d6ef37f935a1a4af9f690e29" }
   ]
 }

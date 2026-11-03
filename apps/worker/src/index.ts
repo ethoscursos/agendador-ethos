@@ -1,5 +1,6 @@
 // index.ts — entrypoint do Worker (Hono)
 import { Hono } from 'hono';
+import type { ExecutionContext } from '@cloudflare/workers-types';
 import type { Env } from './env';
 import { webhookRoutes } from './routes/webhook';
 import { authRoutes } from './routes/auth';
@@ -28,7 +29,7 @@ function criarApp(env: Env) {
 }
 
 export default {
-  fetch: (req, env, ctx) => criarApp(env).fetch(req, env, ctx),
+  fetch: (req: Request, env: Env, ctx: ExecutionContext) => criarApp(env).fetch(req, env, ctx),
   queue: processarFila,
   scheduled: processarCron,
 };
